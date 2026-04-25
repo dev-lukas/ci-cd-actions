@@ -73,13 +73,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ inputs.python_version }}
-
       - name: Compile Python sources
-        run: python -m compileall .
+        run: python3 -m compileall .
 
       - name: Login to registry
         if: env.SHOULD_PUSH == 'true'
