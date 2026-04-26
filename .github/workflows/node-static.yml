@@ -108,27 +108,19 @@ jobs:
 
       - name: Typecheck application
         if: inputs.typecheck_command != ''
-        env:
-          CHECK_COMMAND: ${{ inputs.typecheck_command }}
-        run: bash -lc "$CHECK_COMMAND"
+        run: ${{ inputs.typecheck_command }}
 
       - name: Lint application
         if: inputs.lint_command != ''
-        env:
-          CHECK_COMMAND: ${{ inputs.lint_command }}
-        run: bash -lc "$CHECK_COMMAND"
+        run: ${{ inputs.lint_command }}
 
       - name: Run tests
         if: inputs.test_command != ''
-        env:
-          CHECK_COMMAND: ${{ inputs.test_command }}
-        run: bash -lc "$CHECK_COMMAND"
+        run: ${{ inputs.test_command }}
 
       - name: Run extra checks
         if: inputs.extra_check_command != ''
-        env:
-          CHECK_COMMAND: ${{ inputs.extra_check_command }}
-        run: bash -lc "$CHECK_COMMAND"
+        run: ${{ inputs.extra_check_command }}
 
       - name: Build application
         run: ${{ inputs.build_command }}
