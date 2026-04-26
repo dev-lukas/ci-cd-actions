@@ -34,10 +34,26 @@ on:
         required: false
         type: string
         default: /api/auth/check
+      smoke_paths:
+        required: false
+        type: string
+        default: ""
       docker_run_env:
         required: false
         type: string
         default: "-e SECRET_KEY=ci-secret -e SITE_URL=http://localhost"
+      pre_build_command:
+        required: false
+        type: string
+        default: ""
+      test_command:
+        required: false
+        type: string
+        default: ""
+      container_test_command:
+        required: false
+        type: string
+        default: ""
       deploy:
         required: false
         type: boolean
@@ -73,8 +89,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
       - name: Compile Python sources
         run: python3 -m compileall .
+
+      - name: Run pre-build checks
+        if: inputs.pre_build_command != ''
+        env:
+          CHECK_COMMAND: ${{ inputs.pre_build_command }}
+        run: bash -lc "$CHECK_COMMAND"
+
+      - name: Run host tests
+        if: inputs.test_command != ''
+        env:
+          CHECK_COMMAND: ${{ inputs.test_command }}
+        run: bash -lc "$CHECK_COMMAND"
 
       - name: Login to registry
         if: env.SHOULD_PUSH == 'true'
@@ -93,7 +126,18 @@ jobs:
             -t "$REMOTE_IMAGE:latest" \
             "${{ inputs.context }}"
 
+      - name: Compile Python sources inside image
+        run: docker run --rm ${{ inputs.docker_run_env }} "$LOCAL_IMAGE" python3 -m compileall .
+
+      - name: Run container tests
+        if: inputs.container_test_command != ''
+        env:
+          CHECK_COMMAND: ${{ inputs.container_test_command }}
+        run: docker run --rm ${{ inputs.docker_run_env }} "$LOCAL_IMAGE" sh -lc "$CHECK_COMMAND"
+
       - name: Smoke test Docker image
+        env:
+          SMOKE_PATHS: ${{ inputs.smoke_paths != '' && inputs.smoke_paths || inputs.smoke_path }}
         run: |
           set -euo pipefail
 
@@ -102,15 +146,24 @@ jobs:
 
           port="$(docker inspect --format '{{ (index (index .NetworkSettings.Ports "${{ inputs.container_port }}/tcp") 0).HostPort }}' "$container_id")"
 
-          for attempt in $(seq 1 45); do
-            if curl -fsS "http://127.0.0.1:${port}${{ inputs.smoke_path }}" >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            ok=0
 
-          docker logs "$container_id"
-          exit 1
+            for attempt in $(seq 1 45); do
+              if curl -fsS "http://127.0.0.1:${port}${path}" >/dev/null; then
+                ok=1
+                break
+              fi
+              sleep 1
+            done
+
+            if [ "$ok" -ne 1 ]; then
+              echo "Smoke test failed for ${path}" >&2
+              docker logs "$container_id"
+              exit 1
+            fi
+          done <<< "$SMOKE_PATHS"
 
       - name: Push Docker image
         if: env.SHOULD_PUSH == 'true'

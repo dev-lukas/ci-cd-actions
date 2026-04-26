@@ -33,6 +33,22 @@ on:
         required: false
         type: string
         default: firephenix-website
+      backend_smoke_paths:
+        required: false
+        type: string
+        default: |
+          /api/auth/check
+          /api/ranking/stats
+          /api/ranking/top
+          /api/user/online?platform=discord
+      website_smoke_paths:
+        required: false
+        type: string
+        default: |
+          /
+          /ranking
+          /wiki
+          /profile
     secrets:
       REGISTRY_PASSWORD:
         required: true
@@ -135,25 +151,51 @@ jobs:
           backend_port="$(docker compose -f docker-compose.ci.yml port backend 5000 | awk -F: '{print $NF}')"
           website_port="$(docker compose -f docker-compose.ci.yml port website 80 | awk -F: '{print $NF}')"
 
-          for attempt in $(seq 1 60); do
-            if curl -fsS "http://127.0.0.1:${backend_port}/api/auth/check" >/dev/null; then
-              backend_ok=1
-              break
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            ok=0
+
+            for attempt in $(seq 1 60); do
+              if curl -fsS "http://127.0.0.1:${backend_port}${path}" >/tmp/firephenix-backend-response.json; then
+                if [ "$path" = "/api/auth/check" ]; then
+                  if ! grep -Fq '"authenticated":false' /tmp/firephenix-backend-response.json; then
+                    sleep 1
+                    continue
+                  fi
+                fi
+                ok=1
+                break
+              fi
+              sleep 1
+            done
+
+            if [ "$ok" -ne 1 ]; then
+              echo "Backend smoke test failed for ${path}" >&2
+              exit 1
             fi
-            sleep 1
-          done
+          done <<< "${{ inputs.backend_smoke_paths }}"
 
-          test "${backend_ok:-0}" = 1
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            ok=0
 
-          for attempt in $(seq 1 30); do
-            if curl -fsS "http://127.0.0.1:${website_port}/" >/dev/null; then
-              website_ok=1
-              break
+            for attempt in $(seq 1 30); do
+              if curl -fsS "http://127.0.0.1:${website_port}${path}" >/tmp/firephenix-website-response.html; then
+                if ! grep -Fq '<div id="app">' /tmp/firephenix-website-response.html; then
+                  sleep 1
+                  continue
+                fi
+                ok=1
+                break
+              fi
+              sleep 1
+            done
+
+            if [ "$ok" -ne 1 ]; then
+              echo "Website smoke test failed for ${path}" >&2
+              exit 1
             fi
-            sleep 1
-          done
-
-          test "${website_ok:-0}" = 1
+          done <<< "${{ inputs.website_smoke_paths }}"
 
       - name: Dump stack logs
         if: failure()

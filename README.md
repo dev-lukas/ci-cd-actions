@@ -9,6 +9,8 @@ lives here:
   Docker Compose deploy.
 - Python service checks, Docker build, HTTP smoke test, registry push, optional
   Docker Compose deploy.
+- Deploy-only Docker Compose workflow for callers that need every integration
+  test to pass before production is touched.
 - FirePhenix ephemeral stack smoke tests with backend, website, MariaDB, and
   Valkey.
 - Ansible syntax and lint checks for infrastructure repositories.
@@ -28,3 +30,8 @@ Docker image workflows expect these repository or organization secrets:
 - `VPS_SSH_KEY`
 
 Deploy steps only use the VPS secrets when the caller passes `deploy: true`.
+
+For repositories with separate integration jobs, prefer `deploy-service.yml` as
+the final caller job with `needs` pointing at all checks. That keeps deploy as a
+true fail-stop boundary instead of hiding it inside a build job that other tests
+still depend on.
