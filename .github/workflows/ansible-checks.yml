@@ -3,10 +3,6 @@ name: Ansible Checks
 on:
   workflow_call:
     inputs:
-      runs_on:
-        required: false
-        type: string
-        default: self-hosted
       python_version:
         required: false
         type: string
@@ -37,7 +33,7 @@ on:
 
 jobs:
   ansible-checks:
-    runs-on: ${{ inputs.runs_on }}
+    runs-on: self-hosted
 
     steps:
       - name: Checkout
