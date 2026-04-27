@@ -6,11 +6,11 @@ on:
       python_version:
         required: false
         type: string
-        default: "3.12"
+        default: system
       requirements_file:
         required: false
         type: string
-        default: requirements.txt
+        default: ""
       install_command:
         required: false
         type: string
@@ -28,10 +28,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ inputs.python_version }}
+      - name: Resolve Python
+        env:
+          PYTHON_VERSION: ${{ inputs.python_version }}
+        run: |
+          set -euo pipefail
+
+          python_bin=python3
+          if [ -n "$PYTHON_VERSION" ] && [ "$PYTHON_VERSION" != "system" ]; then
+            requested_bin="python${PYTHON_VERSION}"
+            if command -v "$requested_bin" >/dev/null 2>&1; then
+              python_bin="$requested_bin"
+            else
+              echo "::warning::${requested_bin} is not installed on this runner; using python3"
+            fi
+          fi
+
+          "$python_bin" --version
+          echo "PYTHON_BIN=$python_bin" >> "$GITHUB_ENV"
 
       - name: Install requirements
         if: inputs.install_command != '' || inputs.requirements_file != ''
@@ -42,13 +56,13 @@ jobs:
           set -euo pipefail
 
           if [ -n "$INSTALL_COMMAND" ]; then
-            sh -lc "$INSTALL_COMMAND"
+            bash -euo pipefail -c "$INSTALL_COMMAND"
           elif [ -f "$REQUIREMENTS_FILE" ]; then
-            python -m pip install -r "$REQUIREMENTS_FILE"
+            "$PYTHON_BIN" -m pip install -r "$REQUIREMENTS_FILE"
           fi
 
       - name: Run checks
         if: inputs.check_commands != ''
         env:
           CHECK_COMMANDS: ${{ inputs.check_commands }}
-        run: sh -lc "$CHECK_COMMANDS"
+        run: bash -euo pipefail -c "$CHECK_COMMANDS"

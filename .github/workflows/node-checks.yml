@@ -50,34 +50,34 @@ jobs:
         if: inputs.install_command != ''
         env:
           INSTALL_COMMAND: ${{ inputs.install_command }}
-        run: sh -lc "$INSTALL_COMMAND"
+        run: bash -euo pipefail -c "$INSTALL_COMMAND"
 
       - name: Typecheck
         if: inputs.typecheck_command != ''
         env:
           TYPECHECK_COMMAND: ${{ inputs.typecheck_command }}
-        run: sh -lc "$TYPECHECK_COMMAND"
+        run: bash -euo pipefail -c "$TYPECHECK_COMMAND"
 
       - name: Lint
         if: inputs.lint_command != ''
         env:
           LINT_COMMAND: ${{ inputs.lint_command }}
-        run: sh -lc "$LINT_COMMAND"
+        run: bash -euo pipefail -c "$LINT_COMMAND"
 
       - name: Test
         if: inputs.test_command != ''
         env:
           TEST_COMMAND: ${{ inputs.test_command }}
-        run: sh -lc "$TEST_COMMAND"
+        run: bash -euo pipefail -c "$TEST_COMMAND"
 
       - name: Build
         if: inputs.build_command != ''
         env:
           BUILD_COMMAND: ${{ inputs.build_command }}
-        run: sh -lc "$BUILD_COMMAND"
+        run: bash -euo pipefail -c "$BUILD_COMMAND"
 
       - name: Audit
         if: inputs.audit_command != ''
         env:
           AUDIT_COMMAND: ${{ inputs.audit_command }}
-        run: sh -lc "$AUDIT_COMMAND"
+        run: bash -euo pipefail -c "$AUDIT_COMMAND"

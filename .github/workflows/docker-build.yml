@@ -99,13 +99,13 @@ jobs:
         if: inputs.container_test_command != ''
         env:
           CONTAINER_TEST_COMMAND: ${{ inputs.container_test_command }}
-        run: sh -lc "$CONTAINER_TEST_COMMAND"
+        run: bash -euo pipefail -c "$CONTAINER_TEST_COMMAND"
 
       - name: Run smoke command
         if: inputs.smoke_command != ''
         env:
           SMOKE_COMMAND: ${{ inputs.smoke_command }}
-        run: sh -lc "$SMOKE_COMMAND"
+        run: bash -euo pipefail -c "$SMOKE_COMMAND"
 
       - name: Cleanup Docker images
         if: always() && inputs.cleanup
