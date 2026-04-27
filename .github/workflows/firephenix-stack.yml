@@ -49,6 +49,10 @@ on:
           /ranking
           /wiki
           /profile
+      browser_smoke_image:
+        required: false
+        type: string
+        default: mcr.microsoft.com/playwright:v1.49.1-noble
     secrets:
       REGISTRY_PASSWORD:
         required: true
@@ -101,6 +105,33 @@ jobs:
 
       - name: Write ephemeral Docker Compose file
         run: |
+          cat > nginx.ci.conf <<'NGINX'
+          events {}
+
+          http {
+            server {
+              listen 80;
+              server_name _;
+
+              location /api/ {
+                proxy_pass http://backend:5000;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location / {
+                proxy_pass http://website:80;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+            }
+          }
+          NGINX
+
           cat > docker-compose.ci.yml <<'YAML'
           services:
             mariadb:
@@ -125,6 +156,8 @@ jobs:
                 DB_PASSWORD: ci-password
                 VALKEY_HOST: valkey
                 VALKEY_PORT: "6379"
+                LIMITER_STORAGE_URI: valkey://valkey:6379
+                CORS_ORIGINS: http://localhost
                 TS3_HOST: teamspeak-disabled
                 TS3_PASSWORD: ci-disabled
               depends_on:
@@ -139,6 +172,16 @@ jobs:
                 - backend
               ports:
                 - "127.0.0.1::80"
+
+            edge:
+              image: nginx:alpine
+              depends_on:
+                - backend
+                - website
+              volumes:
+                - ./nginx.ci.conf:/etc/nginx/nginx.conf:ro
+              ports:
+                - "127.0.0.1::80"
           YAML
 
       - name: Start ephemeral stack
@@ -149,14 +192,14 @@ jobs:
           set -euo pipefail
 
           backend_port="$(docker compose -f docker-compose.ci.yml port backend 5000 | awk -F: '{print $NF}')"
-          website_port="$(docker compose -f docker-compose.ci.yml port website 80 | awk -F: '{print $NF}')"
+          edge_port="$(docker compose -f docker-compose.ci.yml port edge 80 | awk -F: '{print $NF}')"
 
           while IFS= read -r path; do
             [ -n "$path" ] || continue
             ok=0
 
             for attempt in $(seq 1 60); do
-              if curl -fsS "http://127.0.0.1:${backend_port}${path}" >/tmp/firephenix-backend-response.json; then
+              if curl -fsS "http://127.0.0.1:${backend_port}${path}" >/tmp/firephenix-backend-response.json 2>/tmp/firephenix-backend-smoke-error.log; then
                 if [ "$path" = "/api/auth/check" ]; then
                   if ! grep -Fq '"authenticated":false' /tmp/firephenix-backend-response.json; then
                     sleep 1
@@ -171,6 +214,7 @@ jobs:
 
             if [ "$ok" -ne 1 ]; then
               echo "Backend smoke test failed for ${path}" >&2
+              cat /tmp/firephenix-backend-smoke-error.log >&2 || true
               exit 1
             fi
           done <<< "${{ inputs.backend_smoke_paths }}"
@@ -180,7 +224,7 @@ jobs:
             ok=0
 
             for attempt in $(seq 1 30); do
-              if curl -fsS "http://127.0.0.1:${website_port}${path}" >/tmp/firephenix-website-response.html; then
+              if curl -fsS "http://127.0.0.1:${edge_port}${path}" >/tmp/firephenix-website-response.html 2>/tmp/firephenix-website-smoke-error.log; then
                 if ! grep -Fq '<div id="app">' /tmp/firephenix-website-response.html; then
                   sleep 1
                   continue
@@ -193,9 +237,73 @@ jobs:
 
             if [ "$ok" -ne 1 ]; then
               echo "Website smoke test failed for ${path}" >&2
+              cat /tmp/firephenix-website-smoke-error.log >&2 || true
               exit 1
             fi
           done <<< "${{ inputs.website_smoke_paths }}"
+
+      - name: Browser smoke test website
+        env:
+          BROWSER_SMOKE_IMAGE: ${{ inputs.browser_smoke_image }}
+          SMOKE_PATHS: ${{ inputs.website_smoke_paths }}
+        run: |
+          set -euo pipefail
+
+          edge_port="$(docker compose -f docker-compose.ci.yml port edge 80 | awk -F: '{print $NF}')"
+
+          cat > firephenix-browser-smoke.mjs <<'JS'
+          const { chromium } = require('playwright');
+
+          const baseUrl = process.env.BASE_URL;
+          const paths = process.env.SMOKE_PATHS
+            .split('\n')
+            .map((path) => path.trim())
+            .filter(Boolean);
+
+          const browser = await chromium.launch();
+          const page = await browser.newPage();
+          const errors = [];
+
+          page.on('console', (message) => {
+            if (message.type() === 'error') {
+              errors.push(`console.error: ${message.text()}`);
+            }
+          });
+          page.on('pageerror', (error) => {
+            errors.push(`pageerror: ${error.message}`);
+          });
+          page.on('requestfailed', (request) => {
+            errors.push(`request failed: ${request.url()} ${request.failure()?.errorText ?? ''}`);
+          });
+
+          for (const path of paths) {
+            const response = await page.goto(`${baseUrl}${path}`, {
+              waitUntil: 'networkidle',
+              timeout: 30000,
+            });
+
+            if (!response?.ok()) {
+              errors.push(`navigation failed: ${path} ${response?.status() ?? 'no response'}`);
+            }
+
+            await page.locator('#app').waitFor({ timeout: 10000 });
+          }
+
+          await browser.close();
+
+          if (errors.length > 0) {
+            console.error(errors.join('\n'));
+            process.exit(1);
+          }
+          JS
+
+          docker run --rm \
+            --network host \
+            -e BASE_URL="http://127.0.0.1:${edge_port}" \
+            -e SMOKE_PATHS="$SMOKE_PATHS" \
+            -v "$PWD/firephenix-browser-smoke.mjs:/work/firephenix-browser-smoke.mjs:ro" \
+            "$BROWSER_SMOKE_IMAGE" \
+            node /work/firephenix-browser-smoke.mjs
 
       - name: Dump stack logs
         if: failure()

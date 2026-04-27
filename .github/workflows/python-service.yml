@@ -41,7 +41,7 @@ on:
       docker_run_env:
         required: false
         type: string
-        default: "-e SECRET_KEY=ci-secret -e SITE_URL=http://localhost"
+        default: "-e SECRET_KEY=ci-secret -e SITE_URL=http://localhost -e LIMITER_STORAGE_URI=memory://"
       pre_build_command:
         required: false
         type: string
@@ -142,7 +142,7 @@ jobs:
             ok=0
 
             for attempt in $(seq 1 45); do
-              if curl -fsS "http://127.0.0.1:${port}${path}" >/dev/null; then
+              if curl -fsS "http://127.0.0.1:${port}${path}" >/dev/null 2>/tmp/python-service-smoke-error.log; then
                 ok=1
                 break
               fi
@@ -151,6 +151,7 @@ jobs:
 
             if [ "$ok" -ne 1 ]; then
               echo "Smoke test failed for ${path}" >&2
+              cat /tmp/python-service-smoke-error.log >&2 || true
               docker logs "$container_id"
               exit 1
             fi
