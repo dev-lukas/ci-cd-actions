@@ -1,37 +1,42 @@
 # CI/CD Actions
 
-Reusable GitHub Actions workflows for the `dev-lukas` projects.
+Small reusable GitHub Actions workflows for the `dev-lukas` projects.
 
-The project repositories keep only thin caller workflows. Common CI/CD behavior
-lives here:
+Repository-specific tests, smoke checks, integration stacks, and runtime
+assertions belong in the caller repository. These workflows only provide the
+generic execution primitives:
 
-- Node static site checks, Docker build, HTTP smoke test, registry push, optional
-  Docker Compose deploy.
-- Python service checks, Docker build, HTTP smoke test, registry push, optional
-  Docker Compose deploy.
-- Deploy-only Docker Compose workflow for callers that need every integration
-  test to pass before production is touched.
-- FirePhenix ephemeral stack smoke tests with backend, website, MariaDB, and
-  Valkey.
-- Ansible syntax and lint checks for infrastructure repositories.
+- `python-checks.yml`: set up Python, install optional requirements, and run
+  caller-provided checks.
+- `node-checks.yml`: set up Node, install dependencies, and run caller-provided
+  typecheck, lint, test, build, and audit commands.
+- `ansible-checks.yml`: install Ansible dependencies and run caller-provided
+  YAML lint, Ansible lint, and syntax checks.
+- `docker-build.yml`: build caller-provided image tags and optionally run
+  caller-provided container tests and smoke commands.
+- `docker-publish.yml`: log in to a registry and push caller-provided image tags.
+- `compose-deploy.yml`: deploy an allowlisted set of Docker Compose services over
+  SSH.
+
+## Deploys
+
+`compose-deploy.yml` requires:
+
+- `deploy_services`: whitespace, comma, or newline-separated services to deploy.
+- `allowed_services`: whitespace, comma, or newline-separated allowlist.
+- `deploy_path`: remote Docker Compose project directory.
+- `environment`: GitHub environment name, defaulting to `production`.
+- Secrets: `VPS_HOST`, `VPS_USER`, and `VPS_SSH_KEY`.
+
+The deploy job rejects unknown or unsafe service names before opening SSH, then
+runs:
+
+```sh
+docker compose pull <services>
+docker compose up -d --no-deps <services>
+```
 
 ## Versioning
 
 Call workflows with `@main` while iterating. Once stable, tag releases such as
 `v1` and update callers to `@v1`.
-
-## Required Secrets
-
-Docker image workflows expect these repository or organization secrets:
-
-- `REGISTRY_PASSWORD`
-- `VPS_HOST`
-- `VPS_USER`
-- `VPS_SSH_KEY`
-
-Deploy steps only use the VPS secrets when the caller passes `deploy: true`.
-
-For repositories with separate integration jobs, prefer `deploy-service.yml` as
-the final caller job with `needs` pointing at all checks. That keeps deploy as a
-true fail-stop boundary instead of hiding it inside a build job that other tests
-still depend on.

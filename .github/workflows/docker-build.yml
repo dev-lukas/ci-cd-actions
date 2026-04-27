@@ -1,0 +1,112 @@
+name: Docker Build
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        required: true
+        type: string
+      image_tags:
+        required: false
+        type: string
+        default: ""
+      dockerfile:
+        required: false
+        type: string
+        default: Dockerfile
+      context:
+        required: false
+        type: string
+        default: .
+      build_args:
+        required: false
+        type: string
+        default: ""
+      container_test_command:
+        required: false
+        type: string
+        default: ""
+      smoke_command:
+        required: false
+        type: string
+        default: ""
+      registry:
+        required: false
+        type: string
+        default: ""
+      registry_username:
+        required: false
+        type: string
+        default: ""
+      cleanup:
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      REGISTRY_PASSWORD:
+        required: false
+
+jobs:
+  docker-build:
+    runs-on: self-hosted
+
+    env:
+      IMAGE_UNDER_TEST: ${{ inputs.image }}
+      IMAGE_TAGS: ${{ inputs.image_tags }}
+      REGISTRY: ${{ inputs.registry }}
+      REGISTRY_USERNAME: ${{ inputs.registry_username }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        env:
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          CONTEXT: ${{ inputs.context }}
+          BUILD_ARGS: ${{ inputs.build_args }}
+        run: |
+          set -euo pipefail
+
+          build_args_file="$(mktemp)"
+          tags_file="$(mktemp)"
+          trap 'rm -f "$build_args_file" "$tags_file"' EXIT
+
+          while IFS= read -r arg; do
+            [ -n "$arg" ] || continue
+            printf '%s\n' "--build-arg" "$arg" >> "$build_args_file"
+          done <<< "$BUILD_ARGS"
+
+          printf '%s\n' "$IMAGE_UNDER_TEST" > "$tags_file"
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            printf '%s\n' "$tag" >> "$tags_file"
+          done <<< "$IMAGE_TAGS"
+
+          docker_args=()
+          while IFS= read -r tag; do
+            docker_args+=(--tag "$tag")
+          done < "$tags_file"
+
+          while IFS= read -r arg; do
+            docker_args+=("$arg")
+          done < "$build_args_file"
+
+          docker build -f "$DOCKERFILE" "${docker_args[@]}" "$CONTEXT"
+
+      - name: Run container tests
+        if: inputs.container_test_command != ''
+        env:
+          CONTAINER_TEST_COMMAND: ${{ inputs.container_test_command }}
+        run: sh -lc "$CONTAINER_TEST_COMMAND"
+
+      - name: Run smoke command
+        if: inputs.smoke_command != ''
+        env:
+          SMOKE_COMMAND: ${{ inputs.smoke_command }}
+        run: sh -lc "$SMOKE_COMMAND"
+
+      - name: Cleanup Docker images
+        if: always() && inputs.cleanup
+        run: docker image prune -f

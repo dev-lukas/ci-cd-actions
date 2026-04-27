@@ -1,0 +1,54 @@
+name: Python Checks
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        required: false
+        type: string
+        default: "3.12"
+      requirements_file:
+        required: false
+        type: string
+        default: requirements.txt
+      install_command:
+        required: false
+        type: string
+        default: ""
+      check_commands:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  python-checks:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install requirements
+        if: inputs.install_command != '' || inputs.requirements_file != ''
+        env:
+          INSTALL_COMMAND: ${{ inputs.install_command }}
+          REQUIREMENTS_FILE: ${{ inputs.requirements_file }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$INSTALL_COMMAND" ]; then
+            sh -lc "$INSTALL_COMMAND"
+          elif [ -f "$REQUIREMENTS_FILE" ]; then
+            python -m pip install -r "$REQUIREMENTS_FILE"
+          fi
+
+      - name: Run checks
+        if: inputs.check_commands != ''
+        env:
+          CHECK_COMMANDS: ${{ inputs.check_commands }}
+        run: sh -lc "$CHECK_COMMANDS"

@@ -1,0 +1,41 @@
+name: Docker Publish
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        required: true
+        type: string
+      registry_username:
+        required: false
+        type: string
+        default: registry
+      image_tags:
+        required: true
+        type: string
+    secrets:
+      REGISTRY_PASSWORD:
+        required: true
+
+jobs:
+  docker-publish:
+    runs-on: self-hosted
+
+    steps:
+      - name: Login to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.registry_username }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Push Docker image tags
+        env:
+          IMAGE_TAGS: ${{ inputs.image_tags }}
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker push "$tag"
+          done <<< "$IMAGE_TAGS"
