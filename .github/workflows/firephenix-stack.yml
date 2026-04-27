@@ -243,6 +243,7 @@ jobs:
           done <<< "${{ inputs.website_smoke_paths }}"
 
       - name: Browser smoke test website
+        if: inputs.component == 'website'
         env:
           BROWSER_SMOKE_IMAGE: ${{ inputs.browser_smoke_image }}
           SMOKE_PATHS: ${{ inputs.website_smoke_paths }}
