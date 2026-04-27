@@ -1,0 +1,100 @@
+name: Docker Compose Deploy
+
+on:
+  workflow_call:
+    inputs:
+      deploy_services:
+        required: true
+        type: string
+      allowed_services:
+        required: true
+        type: string
+      deploy_path:
+        required: true
+        type: string
+      environment:
+        required: false
+        type: string
+        default: production
+    secrets:
+      VPS_HOST:
+        required: true
+      VPS_USER:
+        required: true
+      VPS_SSH_KEY:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Validate selected services
+        env:
+          DEPLOY_SERVICES_INPUT: ${{ inputs.deploy_services }}
+          ALLOWED_SERVICES_INPUT: ${{ inputs.allowed_services }}
+          DEPLOY_PATH_INPUT: ${{ inputs.deploy_path }}
+        run: |
+          set -euo pipefail
+
+          normalize() {
+            printf '%s\n' "$1" | tr ',\n\t' '    ' | xargs
+          }
+
+          deploy_services="$(normalize "$DEPLOY_SERVICES_INPUT")"
+          allowed_services="$(normalize "$ALLOWED_SERVICES_INPUT")"
+
+          case "$DEPLOY_PATH_INPUT" in
+            *$'\n'*|*$'\r'*)
+              echo "deploy_path must not contain newlines" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ -z "$deploy_services" ]; then
+            echo "deploy_services must contain at least one service" >&2
+            exit 1
+          fi
+
+          for service in $deploy_services; do
+            case "$service" in
+              *[!A-Za-z0-9_.-]*)
+                echo "Invalid service name: $service" >&2
+                exit 1
+                ;;
+            esac
+
+            found=0
+            for allowed in $allowed_services; do
+              if [ "$service" = "$allowed" ]; then
+                found=1
+                break
+              fi
+            done
+
+            if [ "$found" -ne 1 ]; then
+              echo "Unknown deploy service: $service" >&2
+              echo "Allowed services: $allowed_services" >&2
+              exit 1
+            fi
+          done
+
+          {
+            echo "DEPLOY_SERVICES=$deploy_services"
+            echo "DEPLOY_PATH=$DEPLOY_PATH_INPUT"
+          } >> "$GITHUB_ENV"
+
+      - name: Deploy selected services
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: DEPLOY_PATH,DEPLOY_SERVICES
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+            docker compose pull $DEPLOY_SERVICES
+            docker compose up -d --no-deps $DEPLOY_SERVICES

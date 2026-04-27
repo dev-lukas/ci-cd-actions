@@ -1,0 +1,83 @@
+name: Node Checks
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        required: false
+        type: string
+        default: "22"
+      install_command:
+        required: false
+        type: string
+        default: npm ci
+      typecheck_command:
+        required: false
+        type: string
+        default: ""
+      lint_command:
+        required: false
+        type: string
+        default: ""
+      test_command:
+        required: false
+        type: string
+        default: ""
+      build_command:
+        required: false
+        type: string
+        default: npm run build
+      audit_command:
+        required: false
+        type: string
+        default: npm audit --audit-level=critical
+
+jobs:
+  node-checks:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+
+      - name: Install dependencies
+        if: inputs.install_command != ''
+        env:
+          INSTALL_COMMAND: ${{ inputs.install_command }}
+        run: sh -lc "$INSTALL_COMMAND"
+
+      - name: Typecheck
+        if: inputs.typecheck_command != ''
+        env:
+          TYPECHECK_COMMAND: ${{ inputs.typecheck_command }}
+        run: sh -lc "$TYPECHECK_COMMAND"
+
+      - name: Lint
+        if: inputs.lint_command != ''
+        env:
+          LINT_COMMAND: ${{ inputs.lint_command }}
+        run: sh -lc "$LINT_COMMAND"
+
+      - name: Test
+        if: inputs.test_command != ''
+        env:
+          TEST_COMMAND: ${{ inputs.test_command }}
+        run: sh -lc "$TEST_COMMAND"
+
+      - name: Build
+        if: inputs.build_command != ''
+        env:
+          BUILD_COMMAND: ${{ inputs.build_command }}
+        run: sh -lc "$BUILD_COMMAND"
+
+      - name: Audit
+        if: inputs.audit_command != ''
+        env:
+          AUDIT_COMMAND: ${{ inputs.audit_command }}
+        run: sh -lc "$AUDIT_COMMAND"

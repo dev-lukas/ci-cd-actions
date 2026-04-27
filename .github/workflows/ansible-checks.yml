@@ -1,0 +1,87 @@
+name: Ansible Checks
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        required: false
+        type: string
+        default: "3.13"
+      requirements_file:
+        required: false
+        type: string
+        default: requirements.txt
+      galaxy_requirements_file:
+        required: false
+        type: string
+        default: requirements.yml
+      yaml_lint_command:
+        required: false
+        type: string
+        default: yamllint .
+      ansible_lint_command:
+        required: false
+        type: string
+        default: ansible-lint
+      syntax_check_command:
+        required: false
+        type: string
+        default: |
+          for playbook in playbooks/*.yml; do
+            ansible-playbook --syntax-check "$playbook"
+          done
+
+jobs:
+  ansible-checks:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install Python requirements
+        env:
+          REQUIREMENTS_FILE: ${{ inputs.requirements_file }}
+        run: |
+          set -euo pipefail
+
+          if [ -f "$REQUIREMENTS_FILE" ]; then
+            python -m pip install -r "$REQUIREMENTS_FILE"
+          else
+            python -m pip install ansible
+          fi
+
+          python -m pip install ansible-lint yamllint
+
+      - name: Install Ansible Galaxy requirements
+        env:
+          GALAXY_REQUIREMENTS_FILE: ${{ inputs.galaxy_requirements_file }}
+        run: |
+          set -euo pipefail
+
+          if [ -f "$GALAXY_REQUIREMENTS_FILE" ]; then
+            ansible-galaxy install -r "$GALAXY_REQUIREMENTS_FILE"
+          fi
+
+      - name: Lint YAML
+        if: inputs.yaml_lint_command != ''
+        env:
+          YAML_LINT_COMMAND: ${{ inputs.yaml_lint_command }}
+        run: sh -lc "$YAML_LINT_COMMAND"
+
+      - name: Lint Ansible
+        if: inputs.ansible_lint_command != ''
+        env:
+          ANSIBLE_LINT_COMMAND: ${{ inputs.ansible_lint_command }}
+        run: sh -lc "$ANSIBLE_LINT_COMMAND"
+
+      - name: Syntax check playbooks
+        if: inputs.syntax_check_command != ''
+        env:
+          SYNTAX_CHECK_COMMAND: ${{ inputs.syntax_check_command }}
+        run: sh -lc "$SYNTAX_CHECK_COMMAND"
