@@ -45,7 +45,22 @@ jobs:
           fi
 
           "$python_bin" --version
+          if ! "$python_bin" -m venv .ci-python >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y python3-venv python3-pip
+              "$python_bin" -m venv .ci-python
+            else
+              echo "::error::Unable to create a Python virtual environment; install venv and pip for $python_bin on this runner"
+              exit 1
+            fi
+          fi
+
+          python_bin="$PWD/.ci-python/bin/python"
+          "$python_bin" -m pip --version
+
           echo "PYTHON_BIN=$python_bin" >> "$GITHUB_ENV"
+          echo "$PWD/.ci-python/bin" >> "$GITHUB_PATH"
 
       - name: Install requirements
         if: inputs.install_command != '' || inputs.requirements_file != ''
