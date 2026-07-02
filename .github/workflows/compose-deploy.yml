@@ -30,6 +30,12 @@ jobs:
     environment: ${{ inputs.environment }}
 
     steps:
+      - name: Refuse to deploy from non-main refs
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Refusing to deploy from '${GITHUB_REF}' — deployments are only allowed from refs/heads/main." >&2
+          exit 1
+
       - name: Validate selected services
         id: validate
         env:
