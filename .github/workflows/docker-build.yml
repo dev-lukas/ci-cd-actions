@@ -6,6 +6,10 @@ on:
       image:
         required: true
         type: string
+      # Extra tags (typically registry-namespaced, e.g. ...:sha and ...:latest)
+      # applied on top of `image`. Only applied on main-ref runs: branch/PR
+      # builds must never tag registry names like :latest on the shared
+      # runner, or a later publish job could push a branch build.
       image_tags:
         required: false
         type: string
@@ -66,6 +70,7 @@ jobs:
           DOCKERFILE: ${{ inputs.dockerfile }}
           CONTEXT: ${{ inputs.context }}
           BUILD_ARGS: ${{ inputs.build_args }}
+          APPLY_IMAGE_TAGS: ${{ github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
 
@@ -79,10 +84,14 @@ jobs:
           done <<< "$BUILD_ARGS"
 
           printf '%s\n' "$IMAGE_UNDER_TEST" > "$tags_file"
-          while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            printf '%s\n' "$tag" >> "$tags_file"
-          done <<< "$IMAGE_TAGS"
+          if [ "$APPLY_IMAGE_TAGS" = "true" ]; then
+            while IFS= read -r tag; do
+              [ -n "$tag" ] || continue
+              printf '%s\n' "$tag" >> "$tags_file"
+            done <<< "$IMAGE_TAGS"
+          elif [ -n "$IMAGE_TAGS" ]; then
+            echo "Non-main ref: skipping extra image tags ($(echo "$IMAGE_TAGS" | tr '\n' ' '))"
+          fi
 
           docker_args=()
           while IFS= read -r tag; do

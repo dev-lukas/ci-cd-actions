@@ -13,6 +13,14 @@ on:
       image_tags:
         required: true
         type: string
+      # Immutable local image (e.g. local/name:<sha>) to retag each image_tag
+      # from just before pushing. Guards against pushing a mutable tag like
+      # :latest that a concurrent run re-pointed on the shared runner. When
+      # empty, tags are pushed as-is (legacy behavior).
+      source_image:
+        required: false
+        type: string
+        default: ""
     secrets:
       REGISTRY_PASSWORD:
         required: true
@@ -38,10 +46,14 @@ jobs:
       - name: Push Docker image tags
         env:
           IMAGE_TAGS: ${{ inputs.image_tags }}
+          SOURCE_IMAGE: ${{ inputs.source_image }}
         run: |
           set -euo pipefail
 
           while IFS= read -r tag; do
             [ -n "$tag" ] || continue
+            if [ -n "$SOURCE_IMAGE" ]; then
+              docker tag "$SOURCE_IMAGE" "$tag"
+            fi
             docker push "$tag"
           done <<< "$IMAGE_TAGS"
