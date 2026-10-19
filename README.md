@@ -40,3 +40,7 @@ docker compose up -d --no-deps <services>
 
 Call workflows with `@main` while iterating. Once stable, tag releases such as
 `v1` and update callers to `@v1`.
+
+## License
+
+[MIT](LICENSE)
